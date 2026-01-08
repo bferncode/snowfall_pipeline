@@ -17,23 +17,33 @@ nws = NWSClient()
 # 2. Determine Dates
 if run_mode == "incremental":
     last_date = get_table_watermark(TBL_SNOW_OBS, "date")
-    start_date = (last_date).strftime('%Y-%m-%d') if last_date else "2025-12-01"
+    start_date = (last_date).strftime('%Y-%m-%d') if last_date else "2026-01-05"
     end_date = (pd.Timestamp.now() + pd.Timedelta(days=1)).strftime('%Y-%m-%d')
 else:
-    start_date = "2025-12-01"
+    start_date = "2026-01-05"
     end_date = pd.Timestamp.now().strftime('%Y-%m-%d')
 
 # 3. Process Observations
 stations = spark.table(TBL_WEATHER_STATIONS).toPandas()
+stations = stations[:5]
 all_obs = []
 for _, row in stations.iterrows():
     data = snotel.fetch_historical_data(row['site_id'], row['ntwk'], start_date, end_date)
-    if data is not None: all_obs.append(data)
+    if data is not None: 
+        all_obs.append(data)
 
 if all_obs:
+    from modules.transformer import transform_historical_data
+    
+    # Combine raw dataframes
     obs_df = pd.concat(all_obs)
-    # Note: add your transform_historical_data logic here
-    upsert_to_delta(obs_df, TBL_SNOW_OBS, ["date", "site_id"], mode=run_mode)
+    
+    # Transform raw columns (Station Id -> site_id, etc.) to match Delta schema
+    # This addresses the [DELTA_MERGE_UNRESOLVED_EXPRESSION] error
+    clean_obs_df = transform_historical_data(obs_df)
+    
+    # Use 'date_hr' and 'site_id' as join keys for a more granular unique constraint
+    upsert_to_delta(clean_obs_df, TBL_SNOW_OBS, ["date_hr", "site_id"], mode=run_mode)
 
 # 4. Process Forecasts (Always upsert/refresh)
 all_hourly = []

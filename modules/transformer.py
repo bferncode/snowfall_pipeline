@@ -1,6 +1,7 @@
 from pyspark.sql import functions as F
+import pandas as pd
 from modules.database import get_spark
-from config.settings import TBL_WEATHER_FCST, TBL_SNOW_FCST, TBL_COMBINED_FCST
+from config.settings import TBL_WEATHER_FCST, TBL_SNOW_FCST, TBL_COMBINED_FCST, TBL_WEATHER_STATIONS
 
 def generate_combined_forecast():
     """Joins hourly and snow tables already in Delta to create the gold summary."""
@@ -8,6 +9,7 @@ def generate_combined_forecast():
     
     weather = spark.table(TBL_WEATHER_FCST).alias("w")
     snow = spark.table(TBL_SNOW_FCST).alias("s")
+    stations = spark.table(TBL_WEATHER_STATIONS).alias("x")
     
     # Spark Join: Weather record is within the Snow window
     combined = snow.join(
@@ -16,8 +18,13 @@ def generate_combined_forecast():
         (F.col("w.startTime") >= F.col("s.snow_start")) & 
         (F.col("w.startTime") < F.col("s.snow_end")),
         "left"
-    ).groupBy(
-        "s.site_id", "s.snow_start", "s.snow_end", "s.total_snow_in"
+    ).join(
+        stations,
+        F.col("x.site_id") == F.col("s.site_id"),
+        how="inner"
+    )
+    .groupBy(
+        "s.site_id", "x.site_name", "s.snow_start", "s.snow_end", "s.total_snow_in"
     ).agg(
         F.round(F.avg("temperature"), 1).alias("avg_temp"),
         F.max("probabilityOfPrecipitation.value").alias("max_pop"),
