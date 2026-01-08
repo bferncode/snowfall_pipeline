@@ -22,8 +22,7 @@ def generate_combined_forecast():
         stations,
         F.col("x.site_id") == F.col("s.site_id"),
         how="inner"
-    )
-    .groupBy(
+    ).groupBy(
         "s.site_id", "x.site_name", "s.snow_start", "s.snow_end", "s.total_snow_in"
     ).agg(
         F.round(F.avg("temperature"), 1).alias("avg_temp"),
@@ -31,7 +30,7 @@ def generate_combined_forecast():
         F.concat_ws(", ", F.collect_set("shortForecast")).alias("conditions")
     )
     
-    combined.write.format("delta").mode("overwrite").saveAsTable(TBL_COMBINED_FCST)
+    combined.write.format("delta").mode("overwrite").option("mergeSchema", "true").saveAsTable(TBL_COMBINED_FCST)
 
 def transform_historical_data(pd_df):
     """
